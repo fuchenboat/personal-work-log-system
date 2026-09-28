@@ -336,13 +336,13 @@ Chrome / Edge 90+、Firefox 88+、Safari 14+。
 
 ## 许可证
 
-<!-- 发布前请补充许可证，例如：
-MIT License — 详见 LICENSE 文件
-或
-本项目采用 CC BY-NC 4.0，禁止商业使用
--->
+本项目基于 [MIT License](LICENSE) 开源。
 
-尚未指定。
+你可以自由使用、修改、分发本项目，包括用于商业目的，只需在副本或实质性部分中保留原始版权声明与许可声明。软件按「原样」提供，不附带任何形式的担保。
+
+```
+Copyright (c) 2026 fuchenboat
+```
 
 ## English
 
