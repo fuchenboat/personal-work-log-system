@@ -934,6 +934,45 @@ code, .mono {
 .filter-bar .row { flex: 0 0 auto; }
 
 .log-list { display: flex; flex-direction: column; gap: 12px; }
+
+/* 分页控件 */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.pager__btn {
+  min-width: 34px;
+  height: 32px;
+  padding: 0 11px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--txt-2);
+  background: rgba(24, 38, 62, 0.7);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background var(--t), border-color var(--t), color var(--t), transform var(--t-fast);
+}
+.pager__btn:hover:not(:disabled) {
+  color: var(--txt);
+  background: rgba(34, 211, 238, 0.14);
+  border-color: var(--line-2);
+  transform: translateY(-1px);
+}
+.pager__btn:active:not(:disabled) { transform: translateY(0) scale(0.985); }
+.pager__btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.pager__btn.is-current {
+  color: #05121d;
+  font-weight: 600;
+  background: linear-gradient(135deg, var(--cyan), #4facfe 70%, var(--blue));
+  border-color: rgba(34, 211, 238, 0.55);
+  box-shadow: 0 4px 16px rgba(34, 211, 238, 0.24);
+}
+.pager__gap { min-width: 22px; text-align: center; color: var(--txt-4); }
 .log-item {
   position: relative;
   padding: 15px 18px;
@@ -1495,7 +1534,7 @@ code, .mono {
 
 /* 打印（导出日志时更干净） */
 @media print {
-  .bg-layer, .topbar, .filter-bar, .modal__foot, .log-item__actions { display: none !important; }
+  .bg-layer, .topbar, .filter-bar, .pager, .modal__foot, .log-item__actions { display: none !important; }
   body { overflow: visible; background: #fff; color: #000; }
   .modal-mask { position: static; background: none; padding: 0; }
   .modal { border: none; box-shadow: none; max-height: none; background: #fff; }

@@ -33,6 +33,7 @@
   var TITLE_MAX = 80;
   var TAG_MAX_COUNT = 12;
   var TAG_MAX_LEN = 20;
+  var PAGE_SIZE = 10;                       /* 日志列表每页条数 */
 
   /* 富文本工具栏配置 */
   var EDITOR_TOOLS = [
@@ -49,6 +50,7 @@
 
   /* ------------------------------------------------- 模块级筛选状态（唯一真相） */
   var currentFilter = { startDate: '', endDate: '', projectId: '', mood: '', keyword: '' };
+  var currentPage = 1;                      /* 当前页码，筛选条件变化时回到第 1 页 */
 
   /* ============================================================ 小工具函数 */
 
@@ -253,9 +255,11 @@
     ]);
   }
 
-  function buildResultRow(count, onClear) {
+  function buildResultRow(count, page, totalPages, onClear) {
+    var summary = '共 ' + count + ' 条记录';
+    if (totalPages > 1) summary += ' · 第 ' + page + ' / ' + totalPages + ' 页';
     var left = [
-      U.el('span', { class: 'muted text-sm', text: '共 ' + count + ' 条记录' })
+      U.el('span', { class: 'muted text-sm', text: summary })
     ];
     if (currentFilter.keyword) {
       left.push(U.el('span', {
@@ -275,6 +279,63 @@
       U.el('div', { class: 'row row--tight' }, left),
       U.el('span', { class: 'muted-2 text-xs', text: '按日期倒序' })
     ]);
+  }
+
+  /* ============================================================ 分页控件 */
+
+  /** 计算需要展示的页码序列，中间被跳过的部分折叠为省略号 */
+  function pagerTokens(page, totalPages) {
+    var visible = {};
+    visible[1] = true;
+    visible[totalPages] = true;
+    for (var i = page - 1; i <= page + 1; i++) {
+      if (i >= 1 && i <= totalPages) visible[i] = true;
+    }
+
+    var tokens = [];
+    var prev = 0;
+    Object.keys(visible).map(Number).sort(function (a, b) { return a - b; })
+      .forEach(function (num) {
+        if (prev && num - prev > 1) tokens.push('...');
+        tokens.push(num);
+        prev = num;
+      });
+    return tokens;
+  }
+
+  /** 分页条：上一页 / 页码 / 下一页 */
+  function buildPager(page, totalPages, onGo) {
+    function makeBtn(label, target, opts) {
+      var o = opts || {};
+      var btn = U.el('button', {
+        class: 'pager__btn' + (o.current ? ' is-current' : ''),
+        type: 'button',
+        text: label,
+        title: o.title || ('第 ' + target + ' 页'),
+        'aria-label': o.title || ('第 ' + target + ' 页')
+      });
+      if (o.current) btn.setAttribute('aria-current', 'page');
+      if (o.disabled) {
+        btn.disabled = true;
+      } else {
+        btn.addEventListener('click', function () { onGo(target); });
+      }
+      return btn;
+    }
+
+    var wrap = U.el('nav', { class: 'pager', 'aria-label': '日志分页' });
+    wrap.appendChild(makeBtn('上一页', page - 1, { disabled: page <= 1, title: '上一页' }));
+
+    pagerTokens(page, totalPages).forEach(function (token) {
+      if (token === '...') {
+        wrap.appendChild(U.el('span', { class: 'pager__gap', text: '…' }));
+        return;
+      }
+      wrap.appendChild(makeBtn(String(token), token, { current: token === page }));
+    });
+
+    wrap.appendChild(makeBtn('下一页', page + 1, { disabled: page >= totalPages, title: '下一页' }));
+    return wrap;
   }
 
   /* ============================================================ 删除流程 */
@@ -939,6 +1000,7 @@
   function render(container, params) {
     /* 仅从外部进入时用 params 初始化筛选条件 */
     currentFilter = normalizeFilter(params);
+    currentPage = 1;
 
     /* ---- 页头 ---- */
     var newBtn = U.el('button', {
@@ -1036,6 +1098,12 @@
     var resultWrap = U.el('div', { id: 'logResultWrap', class: 'section' });
     container.appendChild(resultWrap);
 
+    /** 筛选条件变化：回到第 1 页再刷新 */
+    function refreshFromFilter() {
+      currentPage = 1;
+      refreshList();
+    }
+
     function clearFilters() {
       currentFilter = { startDate: '', endDate: '', projectId: '', mood: '', keyword: '' };
       startInput.value = '';
@@ -1044,29 +1112,48 @@
       moodSelect.value = '';
       kwInput.value = '';
       syncUrl();
-      refreshList();
+      refreshFromFilter();
     }
 
     function setKeyword(keyword) {
       currentFilter.keyword = keyword;
       kwInput.value = keyword;
       syncUrl();
+      refreshFromFilter();
+    }
+
+    /** 翻页：只重绘结果区，并把列表滚回可视区顶部 */
+    function goPage(page) {
+      if (page === currentPage) return;
+      currentPage = page;
       refreshList();
+      if (typeof resultWrap.scrollIntoView === 'function') {
+        resultWrap.scrollIntoView({ block: 'start' });
+      }
     }
 
     function refreshList() {
       var logs = DB.queryLogs(currentFilter);
+      var total = logs.length;
+      var totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+      if (currentPage > totalPages) currentPage = totalPages;
+      if (currentPage < 1) currentPage = 1;
+      var start = (currentPage - 1) * PAGE_SIZE;
+
       resultWrap.innerHTML = '';
-      resultWrap.appendChild(buildResultRow(logs.length, clearFilters));
-      if (!logs.length) {
+      resultWrap.appendChild(buildResultRow(total, currentPage, totalPages, clearFilters));
+      if (!total) {
         resultWrap.appendChild(buildEmptyState(clearFilters));
         return;
       }
       var list = U.el('div', { class: 'log-list' });
-      logs.forEach(function (log) {
+      logs.slice(start, start + PAGE_SIZE).forEach(function (log) {
         list.appendChild(buildLogItem(log, currentFilter.keyword, setKeyword));
       });
       resultWrap.appendChild(list);
+      if (totalPages > 1) {
+        resultWrap.appendChild(buildPager(currentPage, totalPages, goPage));
+      }
     }
 
     function onFilterChange() {
@@ -1076,7 +1163,7 @@
       currentFilter.mood = moodSelect.value;
       currentFilter.keyword = kwInput.value.trim();
       syncUrl();
-      refreshList();
+      refreshFromFilter();
     }
 
     startInput.addEventListener('change', onFilterChange);
@@ -1086,7 +1173,7 @@
     kwInput.addEventListener('input', U.debounce(function () {
       currentFilter.keyword = kwInput.value.trim();
       syncUrl();
-      refreshList();
+      refreshFromFilter();
     }, 250));
 
     refreshList();
