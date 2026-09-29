@@ -18,6 +18,12 @@
   /* 是否展开「已归档」分组（模块级状态，切换后重绘） */
   var showArchived = false;
 
+  /* 项目详情弹窗中「最近日志」最多展示的条数 */
+  var RECENT_LOG_LIMIT = 5;
+
+  /* 情绪图标（与 logs.js / dashboard.js 取值一致） */
+  var MOOD_ICON = { smooth: 'smile', normal: 'meh', frustrated: 'frown' };
+
   /* ============================================================ 通用片段 */
 
   /** 概览指标卡：statCard('stat--green', '进行中', 3, '个', 'sparkles', hint) */
@@ -44,6 +50,17 @@
     ]);
   }
 
+  /** 详情弹窗的信息块：标签 + 值（值可为字符串或节点） */
+  function infoItem(label, value) {
+    var valueEl = U.el('div', { class: 'info-item__value' });
+    if (value instanceof Node) valueEl.appendChild(value);
+    else valueEl.textContent = String(value === undefined || value === null ? '' : value);
+    return U.el('div', { class: 'info-item' }, [
+      U.el('div', { class: 'info-item__label', text: label }),
+      valueEl
+    ]);
+  }
+
   /* ============================================================ 项目卡片 */
 
   function buildProjectCard(p) {
@@ -65,17 +82,23 @@
       class: 'project-card__title',
       title: '查看该项目下的全部日志',
       text: p.name,
-      onclick: function () { App.navigate('logs', { projectId: p.id }); }
+      onclick: function (e) {
+        e.stopPropagation();
+        App.navigate('logs', { projectId: p.id });
+      }
     });
 
-    /* ---- 操作按钮：编辑 / 归档 / 删除 ---- */
+    /* ---- 操作按钮：编辑 / 归档 / 删除（点击时不触发卡片详情）---- */
     var editBtn = U.el('button', {
       class: 'btn btn--icon btn--ghost',
       type: 'button',
       html: U.icon('edit', 15),
       title: '编辑项目',
       'aria-label': '编辑项目',
-      onclick: function () { App.openProjectForm({ project: p }); }
+      onclick: function (e) {
+        e.stopPropagation();
+        App.openProjectForm({ project: p });
+      }
     });
 
     var archiveBtn = U.el('button', {
@@ -84,7 +107,10 @@
       html: U.icon(archived ? 'archive-restore' : 'archive', 15),
       title: archived ? '取消归档' : '归档项目',
       'aria-label': archived ? '取消归档' : '归档项目',
-      onclick: function () { toggleArchive(p); }
+      onclick: function (e) {
+        e.stopPropagation();
+        toggleArchive(p);
+      }
     });
 
     var deleteBtn = U.el('button', {
@@ -93,7 +119,10 @@
       html: U.icon('trash', 15),
       title: '删除项目',
       'aria-label': '删除项目',
-      onclick: function () { removeProject(p); }
+      onclick: function (e) {
+        e.stopPropagation();
+        removeProject(p);
+      }
     });
 
     var head = U.el('div', { class: 'project-card__head' }, [
@@ -128,7 +157,10 @@
       preview = U.el('div', {
         class: 'project-card__preview',
         title: '查看日志详情',
-        onclick: function () { App.openLogDetail(latest.id); }
+        onclick: function (e) {
+          e.stopPropagation();
+          App.openLogDetail(latest.id);
+        }
       }, [
         U.el('div', { class: 'project-card__preview-label', html: U.icon('clock', 13) + '<span>最近日志</span>' }),
         U.el('div', {
@@ -152,9 +184,18 @@
     if (latest) footChildren.push(iconText('clock', 13, '最近记录 ' + U.formatDate(latest.date)));
     var foot = U.el('div', { class: 'project-card__foot' }, footChildren);
 
+    /* ---- 整卡可点击：打开项目详情（卡内按钮 / 标题 / 预览各自阻止冒泡）---- */
     return U.el('div', {
       class: 'project-card' + (archived ? ' is-archived' : ''),
-      dataset: { projectId: p.id }
+      dataset: { projectId: p.id },
+      tabindex: '0',
+      title: '查看项目详情',
+      onclick: function () { App.openProjectDetail(p.id); },
+      onkeydown: function (e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        App.openProjectDetail(p.id);
+      }
     }, [head, descEl, statsEl, preview, foot]);
   }
 
@@ -204,65 +245,223 @@
 
   /* ============================================================ 归档逻辑 */
 
+  /* 返回 Promise<boolean>：true 表示归档状态已变更（取消确认或失败均为 false） */
   function toggleArchive(p) {
-    if (!p.archived) {
-      App.confirm({
-        title: '归档项目',
-        message: '确定要归档「' + p.name + '」吗？',
-        detail: '归档后该项目不会再出现在新建日志的项目选择列表中，但历史日志与项目信息仍会保留，可随时取消归档。',
-        confirmText: '确认归档'
-      }).then(function (ok) {
-        if (!ok) return;
-        DB.setProjectArchived(p.id, true).then(function () {
-          U.toast('项目已归档', 'ok');
-          App.render();
-        }).catch(function (err) {
-          U.toast(err && err.message ? err.message : '归档失败，请重试', 'error');
-        });
-      });
-      return;
-    }
-
-    App.confirm({
+    var archiving = !p.archived;
+    var opts = archiving ? {
+      title: '归档项目',
+      message: '确定要归档「' + p.name + '」吗？',
+      detail: '归档后该项目不会再出现在新建日志的项目选择列表中，但历史日志与项目信息仍会保留，可随时取消归档。',
+      confirmText: '确认归档'
+    } : {
       title: '取消归档',
       message: '确定要取消归档「' + p.name + '」吗？取消后该项目将重新出现在新建日志的项目选择列表中。',
       confirmText: '取消归档',
       danger: false
-    }).then(function (ok) {
-      if (!ok) return;
-      DB.setProjectArchived(p.id, false).then(function () {
-        U.toast('已取消归档', 'ok');
+    };
+
+    return App.confirm(opts).then(function (ok) {
+      if (!ok) return false;
+      return DB.setProjectArchived(p.id, archiving).then(function () {
+        U.toast(archiving ? '项目已归档' : '已取消归档', 'ok');
         App.render();
+        return true;
       }).catch(function (err) {
-        U.toast(err && err.message ? err.message : '操作失败，请重试', 'error');
+        U.toast(err && err.message ? err.message : (archiving ? '归档失败，请重试' : '操作失败，请重试'), 'error');
+        return false;
       });
     });
   }
 
   /* ============================================================ 删除逻辑 */
 
+  /* 返回 Promise<boolean>：true 表示已删除（取消确认或失败均为 false） */
   function removeProject(p) {
     var n = DB.countLogsOfProject(p.id);
     var detail = n > 0
       ? '该项目下的 ' + n + ' 条日志不会被删除，但会变为「未关联」状态。此操作不可恢复。'
       : '此操作不可恢复。';
 
-    App.confirm({
+    return App.confirm({
       title: '删除项目',
       message: '确定要删除「' + p.name + '」吗？',
       detail: detail,
       confirmText: '确认删除',
       danger: true
     }).then(function (ok) {
-      if (!ok) return;
-      DB.deleteProject(p.id).then(function () {
+      if (!ok) return false;
+      return DB.deleteProject(p.id).then(function () {
         U.toast('项目已删除', 'ok');
         App.render();
+        return true;
       }).catch(function (err) {
         U.toast(err && err.message ? err.message : '删除失败，请重试', 'error');
+        return false;
       });
     });
   }
+
+  /* ======================================================== 项目详情弹窗 */
+
+  /** 详情弹窗中的单条最近日志（复用看板的 .mini-log 样式） */
+  function buildRecentLogRow(log) {
+    var knownMood = !!U.MOOD_LABEL[log.mood];
+    return U.el('div', {
+      class: 'mini-log',
+      tabindex: '0',
+      title: '查看日志详情',
+      onclick: function () { App.openLogDetail(log.id); },
+      onkeydown: function (e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        App.openLogDetail(log.id);
+      }
+    }, [
+      U.el('div', { class: 'mini-log__date', text: String(log.date || '').slice(5) }),
+      U.el('div', { class: 'mini-log__main' }, [
+        U.el('div', {
+          class: 'mini-log__title',
+          text: String(log.title || ''),
+          title: String(log.title || '')
+        }),
+        U.el('div', { class: 'mini-log__meta' }, [
+          U.el('span', { class: 'badge badge--' + (knownMood ? log.mood : 'plain') }, [
+            U.el('span', { html: U.icon(MOOD_ICON[log.mood] || 'info', 12) }),
+            U.el('span', { text: knownMood ? U.MOOD_LABEL[log.mood] : '未记录' })
+          ]),
+          U.el('span', { text: '更新于 ' + U.relativeTime(log.updatedAt) })
+        ])
+      ])
+    ]);
+  }
+
+  /**
+   * 打开项目详情弹窗
+   * @param {string} id 项目 id
+   */
+  App.openProjectDetail = function (id) {
+    var project = DB.getProject(id);
+    if (!project) {
+      U.toast('项目不存在或已被删除', 'error');
+      return;
+    }
+
+    var modal = null;
+    /* 每次操作前取最新数据，避免弹窗停留期间数据已变更 */
+    function latest() { return DB.getProject(id) || project; }
+
+    var archived = !!project.archived;
+    var logs = DB.queryLogs({ projectId: id });        /* 已按日期倒序 */
+    var recent = logs.slice(0, RECENT_LOG_LIMIT);
+
+    /* ---- 项目状态（归档时追加标记）---- */
+    var statusBadge = U.el('span', {
+      class: 'badge badge--' + (project.status || 'active'),
+      text: U.PROJECT_STATUS_LABEL[project.status] || String(project.status || '')
+    });
+    if (archived) {
+      statusBadge = U.el('span', { class: 'row row--tight' }, [
+        statusBadge,
+        U.el('span', { class: 'badge badge--archived', text: '已归档' })
+      ]);
+    }
+
+    var body = U.el('div', { class: 'col' }, [
+      U.el('div', { class: 'info-grid' }, [
+        infoItem('项目状态', statusBadge),
+        infoItem('日志数量', logs.length + ' 条'),
+        infoItem('创建时间', U.formatDate(project.createdAt)),
+        infoItem('最近更新', U.relativeTime(project.updatedAt))
+      ])
+    ]);
+
+    /* ---- 项目描述（完整展示，保留换行）---- */
+    var desc = String(project.description || '').trim();
+    body.appendChild(U.el('hr', { class: 'divider' }));
+    body.appendChild(U.el('div', { class: 'col' }, [
+      U.el('div', { class: 'section__title', text: '项目描述' }),
+      desc
+        ? U.el('div', { class: 'prose', style: { whiteSpace: 'pre-wrap' }, text: desc })
+        : U.el('div', { class: 'muted text-sm', text: '暂无描述' })
+    ]));
+
+    /* ---- 最近日志 ---- */
+    body.appendChild(U.el('hr', { class: 'divider' }));
+    var recentBlock = U.el('div', { class: 'col' }, [
+      U.el('div', { class: 'row row--between' }, [
+        U.el('div', { class: 'section__title' }, [
+          U.el('span', { text: '最近日志' }),
+          U.el('span', { class: 'section__count', text: String(logs.length) })
+        ]),
+        logs.length > RECENT_LOG_LIMIT
+          ? U.el('span', { class: 'muted-2 text-xs', text: '仅显示最近 ' + RECENT_LOG_LIMIT + ' 条' })
+          : null
+      ])
+    ]);
+    if (recent.length) {
+      var recentList = U.el('div', { class: 'col' });
+      recent.forEach(function (log) { recentList.appendChild(buildRecentLogRow(log)); });
+      recentBlock.appendChild(recentList);
+    } else {
+      recentBlock.appendChild(U.el('div', { class: 'muted text-sm', text: '该项目还没有日志记录' }));
+    }
+    body.appendChild(recentBlock);
+
+    /* ---- 底部操作 ---- */
+    var allLogsBtn = U.el('button', {
+      class: 'btn btn--ghost btn--sm',
+      type: 'button',
+      html: U.icon('list', 15) + '<span>查看全部日志</span>',
+      onclick: function () {
+        modal.close();
+        App.navigate('logs', { projectId: id });
+      }
+    });
+
+    var editBtn = U.el('button', {
+      class: 'btn btn--ghost btn--sm',
+      type: 'button',
+      html: U.icon('edit', 15) + '<span>编辑</span>',
+      onclick: function () {
+        modal.close();
+        App.openProjectForm({ project: latest() });
+      }
+    });
+
+    var archiveBtn = U.el('button', {
+      class: 'btn btn--ghost btn--sm',
+      type: 'button',
+      html: U.icon(archived ? 'archive-restore' : 'archive', 15) +
+        '<span>' + (archived ? '取消归档' : '归档') + '</span>',
+      onclick: function () {
+        toggleArchive(latest()).then(function (changed) {
+          if (changed) modal.close();      /* 归档状态变化后卡片会换分组，退回列表查看 */
+        });
+      }
+    });
+
+    var deleteBtn = U.el('button', {
+      class: 'btn btn--danger btn--sm',
+      type: 'button',
+      html: U.icon('trash', 15) + '<span>删除</span>',
+      onclick: function () {
+        removeProject(latest()).then(function (removed) {
+          if (removed) modal.close();
+        });
+      }
+    });
+
+    modal = App.showModal({
+      title: project.name || '项目详情',
+      icon: 'folder',
+      size: 'lg',
+      body: body,
+      footer: U.el('div', { class: 'row row--between' }, [
+        U.el('div', { class: 'row row--tight' }, [allLogsBtn]),
+        U.el('div', { class: 'row row--tight' }, [editBtn, archiveBtn, deleteBtn])
+      ])
+    });
+  };
 
   /* ============================================================ 视图渲染 */
 

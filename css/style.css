@@ -913,6 +913,10 @@ code, .mono {
 .mini-log__main { min-width: 0; flex: 1 1 auto; display: flex; flex-direction: column; gap: 3px; }
 .mini-log__title { font-size: 13.5px; color: var(--txt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mini-log__meta { font-size: 11.5px; color: var(--txt-4); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mini-log:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
 
 /* ============================================================
  * 07 日志列表
@@ -1134,6 +1138,7 @@ code, .mono {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
+  cursor: pointer;
   transition: all var(--t);
   overflow: hidden;
 }
@@ -1155,6 +1160,10 @@ code, .mono {
 .project-card:hover::after { opacity: 1; }
 .project-card.is-archived { opacity: 0.72; }
 .project-card.is-archived:hover { opacity: 1; }
+.project-card:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
 
 .project-card__head { display: flex; align-items: flex-start; gap: 10px; }
 .project-card__title {
